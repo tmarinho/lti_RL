@@ -13,19 +13,30 @@ STATE_DIM = 1
 
 class RLagent:
     def __init__(self):
-
+        # Parameters
+        self.discount_factor = DISCOUNTFACTOR
         ### Initialize Neural Network
-        # Critic Network
-        self.Q_out              = tf.placeholder(tf.float32, [None, 1])
-        self.s_and_a            = tf.placeholder(tf.float32, [None, CONTROL_DIM+STATE_DIM])
-        self.Q_NN               = NN(self.s_and_a, self.Q_out,[16,16],CONTROL_DIM+STATE_DIM,1)
-        self.target_Q_NN        = NN(self.s_and_a, self.Q_out,[16,16],CONTROL_DIM+STATE_DIM,1)
-        # Actor Network Output
+
+        self.Q_out              = tf.placeholder(tf.float32, [None, 1]) #y_i
+        self.s_next             = tf.placeholder(tf.float32, [None, STATE_DIM])
+        self.action             = tf.placeholder(tf.float32, [None, CONTROL_DIM])
         self.s                  = tf.placeholder(tf.float32, [None, STATE_DIM])
         self.mu_out             = tf.placeholder(tf.float32, [None, CONTROL_DIM])
+        self.reward             = tf.placeholder(tf.float32,[None, 1])
+        self.Q_NN               = NN(tf.concat([self.s,self.action],1), self.Q_out,[16,16],CONTROL_DIM+STATE_DIM,1)
         self.mu_NN              = NN(self.s, self.mu_out,[1,1],STATE_DIM,CONTROL_DIM)
-        self.target_mu_NN       = NN(self.s, self.mu_out,[1,1],STATE_DIM,CONTROL_DIM)
+        self.target_mu_NN       = NN(self.s_next, self.mu_out,[1,1],STATE_DIM,CONTROL_DIM)
+        # Critic Network
+        self.target_Q_NN        = NN(tf.concat([self.s_next,self.target_mu_NN.y_output],1), self.Q_out,[16,16],CONTROL_DIM+STATE_DIM,1)
+        # Actor Network Output
 
+
+        self.yt_pl              = self.reward + DISCOUNTFACTOR*self.target_Q_NN.y_output
+        self.losses             = tf.squared_difference(self.yt_pl, self.Q_NN.y_output)
+        self.L                  = tf.reduce_mean(self.losses)
+        self.optimizer          = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
+        self.train_op           = self.optimizer.minimize(self.L, global_step=tf.contrib.framework.get_global_step())
+        #self.train_op           = self.optimizer.minimize(self.L)
         #var_copy = []
         #for var, var_target in zip(self.mu_NN.params,self.target_mu_NN.params):
         #    var_copy.append(var_target.assign(var))
@@ -49,11 +60,13 @@ class RLagent:
 
     def do_action(self,state):
         return self.sess.run(self.mu_NN.y_output, {self.s :state})
-    
+
     def do_action_target(self,state):
         return self.sess.run(self.target_mu_NN.y_output, {self.s :state})
 #    def run(self, lti, des_state):
-
+    def update_critic(self,state, action, next_state, reward):
+        dictionary = {self.reward: reward, self.s_next :next_state, self.s : state, self.action : action}
+        self.sess.run(self.train_op, dictionary)
 #        return
 
 
